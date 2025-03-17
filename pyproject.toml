@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vmm"
+dynamic = ["version"]
+description = 'This project uses GEOBERTje to extract information from borehole descriptions'
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "Deforce Boje", email = "boje.deforce@kuleuven.be" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "pandas",
+  "beartype",
+  "jupyter",
+  "ipykernel",
+  "matplotlib",
+  "torch",
+  "transformers",
+  "scikit-learn",
+]
+
+[project.urls]
+Documentation = "https://github.com/U.N. Owen/vmm#readme"
+Issues = "https://github.com/U.N. Owen/vmm/issues"
+Source = "https://github.com/U.N. Owen/vmm"
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.hatch.version]
+path = "src/vmm/__about__.py"
+
+[tool.hatch.envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/vmm tests}"
+
+[tool.coverage.run]
+source_pkgs = ["vmm", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/vmm/__about__.py",
+]
+
+[tool.coverage.paths]
+vmm = ["src/vmm", "*/vmm/src/vmm"]
+tests = ["tests", "*/vmm/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
