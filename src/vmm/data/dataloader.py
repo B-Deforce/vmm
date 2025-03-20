@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import typing as tp
 
 import pandas as pd
 import pytorch_lightning as pl
@@ -263,7 +264,7 @@ class TextEmbeddingDataModule(pl.LightningDataModule):
         """
         return [self.id2label.get(label_id, "unknown") for label_id in label_ids]
 
-    def load_torch_dataset(csv_path: str) -> TensorDataset:
+    def _load_torch_dataset(self, csv_path: str) -> TensorDataset:
         """
         Loads embeddings and labels from a CSV file into a PyTorch TensorDataset.
 
@@ -281,3 +282,30 @@ class TextEmbeddingDataModule(pl.LightningDataModule):
         labels = torch.tensor(df["label"].values, dtype=torch.long)
 
         return TensorDataset(embeddings, labels)
+
+    def load_embedding_dataset(
+        self, csv_path: str, dataset_type: tp.Literal["train", "val", "test"]
+    ):
+        """Loads the training dataset into memory from a CSV file.
+
+        Args:
+            csv_path (str): Path to the CSV file.
+            dataset_type (str): Type of dataset. One of "train", "val", or "test".
+        """
+        if dataset_type == "train":
+            self.train_dataset = self._load_torch_dataset(csv_path)
+        elif dataset_type == "val":
+            self.val_dataset = self._load_torch_dataset(csv_path)
+        else:
+            self.test_dataset = self._load_torch_dataset(csv_path)
+
+    def load_label_mapper(self, json_path: str):
+        """Loads label mappings from a JSON file.
+
+        Args:
+            json_path (str): Path to the JSON file.
+        """
+        with open(json_path, "r") as f:
+            mappings = json.load(f)
+            self.label2id = mappings["label2id"]
+            self.id2label = mappings["id2label"]
