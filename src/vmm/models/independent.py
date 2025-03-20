@@ -23,7 +23,9 @@ class BaseClassifier(pl.LightningModule):
         self.save_hyperparameters()
 
         # Define a classifier on top of the embeddings
-        self.classifier = nn.Linear(input_size, num_classes)
+        self.layer_1 = nn.Linear(input_size, 50)
+        self.layer_2 = nn.Linear(50, num_classes)
+        self.classifier = nn.Sequential(self.layer_1, nn.ReLU(), self.layer_2)
         self.loss_fn = nn.CrossEntropyLoss()
         self.learning_rate = learning_rate
 
