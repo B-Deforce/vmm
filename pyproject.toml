@@ -30,12 +30,10 @@ dependencies = [
   "torch",
   "transformers",
   "scikit-learn",
+  "pytorch-lightning",
+  "sentence-transformers",
+  "seaborn",
 ]
-
-[project.urls]
-Documentation = "https://github.com/U.N. Owen/vmm#readme"
-Issues = "https://github.com/U.N. Owen/vmm/issues"
-Source = "https://github.com/U.N. Owen/vmm"
 
 [tool.ruff]
 line-length = 100

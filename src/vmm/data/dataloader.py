@@ -1,170 +1,283 @@
-from typing import Dict, Tuple
+import gc
+import json
+import logging
 
 import pandas as pd
+import pytorch_lightning as pl
 import torch
 from beartype import beartype
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, TensorDataset
+from transformers import AutoModel, AutoTokenizer, pipeline
+from transformers.models.bert.modeling_bert import BertModel
+from transformers.models.bert.tokenization_bert_fast import BertTokenizerFast
+
+logger = logging.getLogger(__name__)
 
 
 @beartype
-class LithoDataLoader:
+class TextEmbeddingDataModule(pl.LightningDataModule):
     """
-    A wrapper for splitting a dataset into stratified train, validation, and test sets,
-    and converting them into PyTorch DataLoaders.
+    A PyTorch Lightning DataModule that preprocesses text data using a Hugging Face
+    feature extraction pipeline, generates CLS token embeddings, and provides train,
+    validation, and test DataLoaders. Additionally, saves data as Pandas DataFrames
+    for traditional ML models (e.g., Decision Trees, XGBoost).
 
     Args:
-        df (pd.DataFrame): The input dataset.
-        y_col (str): Target column name.
-        text_col (str): Text column name.
-        tokenizer_name (str, optional): Name of the HuggingFace tokenizer to use. Defaults to None.
-        test_size (float, optional): Proportion of data to use for testing. Defaults to 0.2.
-        batch_size (int, optional): Batch size for DataLoaders. Defaults to 32.
-        random_state (int, optional): Random seed for reproducibility. Defaults to 42.
+        texts (list[str]): List of input text strings.
+        labels (list[str]): List of text labels corresponding to input texts.
+        model_name (str): Pretrained model name. E.g., "hghcomphys/geobertje-base-dutch-uncased".
+        batch_size (int, optional): Batch size for PyTorch DataLoaders. Defaults to 32.
+        val_split (float, optional): Proportion of data for validation. Defaults to 0.15.
+        test_split (float, optional): Proportion of data for testing. Defaults to 0.15.
+        seed (int | None, optional): Seed for reproducibility. Defaults to 42.
     """
 
     def __init__(
         self,
-        df: pd.DataFrame,
-        y_col: str,
-        text_col: str,
-        tokenizer,
-        test_size: float = 0.2,
+        texts: list[str],
+        labels: list[str],
+        model_name: str,
         batch_size: int = 32,
-        random_state: int = 42,
+        val_split: float = 0.15,
+        test_split: float = 0.15,
+        seed: int | None = 42,
     ):
-        self.df = df
-        self.y_col = y_col
-        self.text_col = text_col
-        self.batch_size = batch_size
-        self.random_state = random_state
-        self.test_size = test_size
-        self.tokenizer = tokenizer
-        # Create label mappings
-        self.label2id = self._get_label2id(df[y_col])
-        self.id2label = {v: k for k, v in self.label2id.items()}  # Reverse mapping
-
-        self._split_data()
-        self._create_dataloaders()
-
-    @staticmethod
-    def _get_label2id(df_target: pd.Series) -> Dict[str, int]:
-        """Creates a mapping from categorical labels to integer IDs.
-
-        Args:
-            df_target (pd.Series): Series containing target labels.
-
-        Returns:
-            Dict[str, int]: Mapping from label strings to numeric IDs.
-        """
-        unique_labels = df_target.unique()
-        return {label: idx for idx, label in enumerate(unique_labels)}
-
-    def _tokenize_text(self, text_series: pd.Series) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Tokenizes a given text column.
-
-        Args:
-            text_col (pd.Series): Series containing feature columns.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Tensors containing tokenized input_ids and attention_masks.
-        """
-        # same as Ghorbanfekr at al. (2025)
-        tokenized = self.tokenizer(
-            text_series.astype(str).tolist(),
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-        )
-
-        return tokenized["input_ids"], tokenized["attention_mask"]
-
-    def _split_data(self):
-        """
-        Splits the dataset into stratified train, validation (half of test size), and test sets.
-        """
-        # Tokenize text column
-        input_ids, attention_masks = self._tokenize_text(self.df[self.text_col])
-
-        # Convert labels to tensor
-        y = torch.tensor(self.df[self.y_col].map(self.label2id).values, dtype=torch.long)
-
-        # Step 1: Train-Test Split (Stratified)
-        (
-            input_ids_train,
-            input_ids_temp,
-            attention_masks_train,
-            attention_masks_temp,
-            y_train,
-            y_temp,
-        ) = train_test_split(
-            input_ids,
-            attention_masks,
-            y,
-            test_size=self.test_size,
-            stratify=y,
-            random_state=self.random_state,
-        )
-
-        # Step 2: Validation-Test Split (Stratified)
-        (
-            input_ids_val,
-            input_ids_test,
-            attention_masks_val,
-            attention_masks_test,
-            y_val,
-            y_test,
-        ) = train_test_split(
-            input_ids_temp,
-            attention_masks_temp,
-            y_temp,
-            test_size=0.5,
-            stratify=y_temp,
-            random_state=self.random_state,
-        )
-
-        # Store splits
-        self.data_splits = {
-            "train": (input_ids_train, attention_masks_train, y_train),
-            "val": (input_ids_val, attention_masks_val, y_val),
-            "test": (input_ids_test, attention_masks_test, y_test),
-        }
-
-    def _create_dataloaders(self):
-        """
-        Converts the train, validation, and test sets into PyTorch DataLoaders.
-        """
-        self.dataloaders = {}
-        for split in ["train", "val", "test"]:
-            input_ids, attention_masks, labels = self.data_splits[split]
-
-            dataset = LithoDataset(input_ids, attention_masks, labels)
-            self.dataloaders[split] = DataLoader(
-                dataset, batch_size=self.batch_size, shuffle=True if split == "train" else False
-            )
-
-    def get_dataloaders(self) -> Tuple[DataLoader, DataLoader, DataLoader]:
-        """
-        Returns the train, validation, and test DataLoaders.
-
-        Returns:
-            Tuple[DataLoader, DataLoader, DataLoader]: The train, validation, and test DataLoaders.
-        """
-        return self.dataloaders["train"], self.dataloaders["val"], self.dataloaders["test"]
-
-
-class LithoDataset(Dataset):
-    def __init__(self, tokens, masks, labels):
-        self.tokens = tokens
-        self.masks = masks
+        super().__init__()
+        self.texts = texts
         self.labels = labels
+        self.model_name = model_name
+        self.batch_size = batch_size
+        self.val_split = val_split
+        self.test_split = test_split
+        self.seed = seed
 
-    def __len__(self):
-        return len(self.labels)
+        # Ensure reproducibility
+        pl.seed_everything(seed, workers=True)
 
-    def __getitem__(self, idx):
-        return {
-            "input_ids": self.tokens.squeeze(0)[idx],
-            "attention_mask": self.masks.squeeze(0)[idx],
-            "labels": self.labels,
-        }
+        # Placeholder for label mappings
+        self.label2id = None
+        self.id2label = None
+
+    def _encode_label(self, label: str) -> int:
+        """Encodes string label as an integer.
+
+        Args:
+            label (str): Text label.
+
+        Returns:
+            int: Encoded label.
+        """
+        return self.label2id.get(label, -1)
+
+    def setup(self, stage: str | None = None):
+        """Splits data into train/val/test, processes embeddings, and saves results.
+
+        Args:
+            stage (str | None, optional): Stage of training. Defaults to None.
+        """
+        train_texts, val_texts, test_texts, train_labels, val_labels, test_labels = (
+            self._split_data()
+        )
+
+        self._create_label_mappings(train_labels)
+
+        train_label_ids = self._encode_labels(train_labels)
+        val_label_ids = self._encode_labels(val_labels)
+        test_label_ids = self._encode_labels(test_labels)
+
+        train_embeddings = self._compute_embeddings(train_texts)
+        train_labels_tensor = torch.tensor(train_label_ids)
+        self._save_as_dataframe("train.csv", train_embeddings, train_labels_tensor, train_texts)
+        self.train_dataset = TensorDataset(train_embeddings, train_labels_tensor)
+
+        # Free memory
+        del train_embeddings
+        del train_labels_tensor
+        gc.collect()
+        torch.cuda.empty_cache()  # If using GPU
+
+        logger.info("Train embeddings saved.")
+
+        val_embeddings = self._compute_embeddings(val_texts)
+        val_labels_tensor = torch.tensor(val_label_ids)
+        self._save_as_dataframe("val.csv", val_embeddings, val_labels_tensor, val_texts)
+        self.val_dataset = TensorDataset(val_embeddings, val_labels_tensor)
+
+        # Free memory
+        del val_embeddings
+        del val_labels_tensor
+        gc.collect()
+        torch.cuda.empty_cache()  # If using GPU
+
+        logger.info("Validation embeddings saved.")
+
+        test_embeddings = self._compute_embeddings(test_texts)
+        test_labels_tensor = torch.tensor(test_label_ids)
+        self._save_as_dataframe("test.csv", test_embeddings, test_labels_tensor, test_texts)
+        self.test_dataset = TensorDataset(test_embeddings, test_labels_tensor)
+
+        # Free memory
+        del test_embeddings
+        del test_labels_tensor
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        logger.info("Test embeddings saved.")
+
+    def _split_data(
+        self,
+    ) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
+        """Splits dataset into train, validation, and test sets using stratification."""
+        train_texts, test_texts, train_labels, test_labels = train_test_split(
+            self.texts,
+            self.labels,
+            test_size=self.test_split,
+            stratify=self.labels,
+            random_state=self.seed,
+        )
+
+        train_texts, val_texts, train_labels, val_labels = train_test_split(
+            train_texts,
+            train_labels,
+            test_size=self.val_split / (1 - self.test_split),
+            stratify=train_labels,
+            random_state=self.seed,
+        )
+
+        return train_texts, val_texts, test_texts, train_labels, val_labels, test_labels
+
+    def _create_label_mappings(self, train_labels: list[str]):
+        """Creates label-to-ID and ID-to-label mappings using training labels.
+
+        Args:
+            train_labels (list[str]): List of training labels.
+        """
+        unique_train_labels = sorted(set(train_labels))
+        self.label2id = {label: i for i, label in enumerate(unique_train_labels)}
+        self.id2label = {i: label for label, i in self.label2id.items()}
+
+        with open("label_mappings.json", "w") as f:
+            json.dump({"label2id": self.label2id, "id2label": self.id2label}, f, indent=4)
+
+    def _encode_labels(self, labels: list[str]) -> list[int]:
+        """Converts text labels to numeric IDs, assigning -1 for unknown labels.
+
+        Args:
+            labels (list[str]): List of text labels.
+
+        Returns:
+            list[int]: List of encoded label IDs.
+        """
+        return [self.label2id.get(label, -1) for label in labels]
+
+    def _get_tokenizer(self) -> BertTokenizerFast:
+        """Returns a Hugging Face tokenizer.
+
+        Returns:
+            BertTokenizerFast: A Hugging Face tokenizer.
+        """
+        return AutoTokenizer.from_pretrained(self.model_name)
+
+    def _get_model(self) -> BertModel:
+        """Returns a Hugging Face model.
+
+        Returns:
+            BertModel: A Hugging Face model.
+        """
+        return AutoModel.from_pretrained(self.model_name)
+
+    def _compute_embeddings(self, texts: list[str]) -> torch.Tensor:
+        """Computes CLS token embeddings using the Hugging Face pipeline.
+
+        Args:
+            texts (list[str]): List of input text strings.
+
+        Returns:
+            torch.Tensor: Tensor of computed embeddings.
+        """
+        feature_extractor = pipeline(
+            "feature-extraction", model=self._get_model(), tokenizer=self._get_tokenizer()
+        )
+        return torch.tensor(
+            [e[0][0] for e in feature_extractor(texts, truncation=True, padding=True)]
+        )
+
+    def _save_as_dataframe(
+        self, filename: str, embeddings: torch.Tensor, labels: torch.Tensor, texts: list[str]
+    ):
+        """Saves embeddings and labels as a Pandas DataFrame.
+
+        Args:
+            filename (str): Name of the CSV file.
+            embeddings (torch.Tensor): Tensor of computed embeddings.
+            labels (torch.Tensor): Tensor of encoded label IDs.
+            texts (list[str]): List of input text strings.
+
+        """
+        df = pd.DataFrame(embeddings.numpy())
+        df["label"] = labels.numpy()
+        df["text"] = texts
+        df.to_csv(filename, index=False)
+
+    def train_dataloader(self) -> DataLoader:
+        """Returns a DataLoader for PyTorch training.
+
+        Returns:
+            DataLoader: A DataLoader for PyTorch training
+        """
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+
+    def val_dataloader(self) -> DataLoader:
+        """Returns a DataLoader for PyTorch validation.
+
+        Returns:
+            DataLoader: A DataLoader for PyTorch validation
+        """
+        return DataLoader(self.val_dataset, batch_size=self.batch_size)
+
+    def test_dataloader(self) -> DataLoader:
+        """Returns a DataLoader for PyTorch testing.
+
+        Returns:
+            DataLoader: A DataLoader for PyTorch testing
+        """
+        return DataLoader(self.test_dataset, batch_size=self.batch_size)
+
+    def get_dataloaders(self) -> tuple[DataLoader, DataLoader, DataLoader]:
+        """Returns train, validation, and test DataLoaders.
+
+        Returns:
+            tuple[DataLoader, DataLoader, DataLoader]: Train, validation, and test DataLoaders.
+        """
+        return self.train_dataloader(), self.val_dataloader(), self.test_dataloader()
+
+    def decode_labels(self, label_ids: list[int]) -> list[str]:
+        """Converts label IDs back to text labels (returns 'unknown' if missing).
+
+        Args:
+            label_ids (list[int]): List of encoded label IDs.
+
+        Returns:
+            list[str]: List of text labels.
+        """
+        return [self.id2label.get(label_id, "unknown") for label_id in label_ids]
+
+    def load_torch_dataset(csv_path: str) -> TensorDataset:
+        """
+        Loads embeddings and labels from a CSV file into a PyTorch TensorDataset.
+
+        Args:
+            csv_path (str): Path to the CSV file.
+
+        Returns:
+            TensorDataset: A PyTorch dataset containing the embeddings and labels.
+        """
+        df = pd.read_csv(csv_path)
+
+        embedding_cols = [col for col in df.columns if col not in ["label", "text"]]
+        embeddings = torch.tensor(df[embedding_cols].values, dtype=torch.float32)
+
+        labels = torch.tensor(df["label"].values, dtype=torch.long)
+
+        return TensorDataset(embeddings, labels)
