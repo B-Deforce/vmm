@@ -1,5 +1,12 @@
 # vmm
 
+This project is work in progress:
+
+- [x] Add data preprocessing module
+- [x] Add dataloader module
+- [ ] Add model module
+- [ ] Add main.py
+
 This project contains code to create an adapted classifier for classifying borehole descriptions into textures, admixtures, and colors. 
 It leverages [GEOBERTje](https://github.com/VITObelgium/geobertje), a language model trained on geological borehole descriptions.
 
