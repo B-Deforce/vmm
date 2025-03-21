@@ -1,8 +1,10 @@
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from beartype import beartype
-from jaxtyping import Num, Float
+from jaxtyping import Float, Num
 from torch import nn
+from torch.utils.data import DataLoader
 
 
 @beartype
@@ -15,9 +17,10 @@ class BaseClassifier(pl.LightningModule):
         input_size (int): The size of the input embeddings.
         num_classes (int): The number of classes to predict.
         learning_rate (float): The learning rate for the optimizer.
+        dropout (float): The dropout rate for the model.
     """
 
-    def __init__(self, input_size: int, num_classes: int, learning_rate: float):
+    def __init__(self, input_size: int, num_classes: int, learning_rate: float, dropout: float):
         super().__init__()
 
         self.save_hyperparameters()
@@ -25,7 +28,8 @@ class BaseClassifier(pl.LightningModule):
         # Define a classifier on top of the embeddings
         self.layer_1 = nn.Linear(input_size, 50)
         self.layer_2 = nn.Linear(50, num_classes)
-        self.classifier = nn.Sequential(self.layer_1, nn.ReLU(), self.layer_2)
+        self.dropout = nn.Dropout(dropout)
+        self.classifier = nn.Sequential(self.layer_1, nn.ReLU(), self.dropout, self.layer_2)
         self.loss_fn = nn.CrossEntropyLoss()
         self.learning_rate = learning_rate
 
@@ -88,3 +92,33 @@ class BaseClassifier(pl.LightningModule):
             torch.optim.Optimizer: The optimizer for the model
         """
         return torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
+
+    @torch.no_grad()
+    def get_predictions(
+        self, dataloader: DataLoader
+    ) -> tuple[Num[np.ndarray, "N"], Num[np.ndarray, "N"], Float[np.ndarray, "N C"]]:
+        """Evaluate the model on the given dataloader.
+
+        Args:
+            dataloader (DataLoader): The dataloader to evaluate the model on.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray, np.ndarray]: The actual labels, predicted labels, and predicted scores.
+        """
+        self.eval()
+        actual = []
+        predicted = []
+        predicted_score = []
+        for batch in dataloader:
+            x, y = batch
+            logits = self(x)
+            predicted_score.append(logits.cpu().detach().numpy())
+            preds = torch.argmax(logits, dim=1)
+            actual.append(y.cpu().detach().numpy())
+            predicted.append(preds.cpu().detach().numpy())
+
+        actual = np.concatenate(actual)
+        predicted = np.concatenate(predicted)
+        predicted_score = np.concatenate(predicted_score)
+
+        return actual, predicted, predicted_score
