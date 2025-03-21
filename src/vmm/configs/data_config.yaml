@@ -1,0 +1,8 @@
+file_path: "vmm/data/raw/MAP_coded_lithology.csv"
+description_col: "beschrijving"
+primary_texture_col: "hoofdnaam1_grondsoort"
+secondary_texture_col: "hoofdnaam2_grondsoort"
+primary_admixture_col: "bijmenging1_grondsoort"
+secondary_admixture_col: "bijmenging2_grondsoort"
+combine_labels: true
+color_col: "kleur"

@@ -1,0 +1,12 @@
+model_name: "hghcomphys/geobertje-base-dutch-uncased"
+val_split: 0.15
+test_split: 0.15
+input_size: 768 # standard BERT input size
+learning_rate: 0.0001
+dropout: 0.1
+batch_size: 32
+num_epochs: 3 # 150
+precomputed_embeddings_dir: "../"
+use_precomputed_embeddings: true
+description_col: "beschrijving"
+target_col: "kleur"
