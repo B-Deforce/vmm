@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import os
 import typing as tp
 
 import pandas as pd
@@ -42,6 +43,7 @@ class TextEmbeddingDataModule(pl.LightningDataModule):
         batch_size: int = 32,
         val_split: float = 0.15,
         test_split: float = 0.15,
+        save_dir: str = "./embedding_data/",
         seed: int | None = 42,
     ):
         super().__init__()
@@ -59,6 +61,9 @@ class TextEmbeddingDataModule(pl.LightningDataModule):
         # Placeholder for label mappings
         self.label2id = None
         self.id2label = None
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
     def _encode_label(self, label: str) -> int:
         """Encodes string label as an integer.
