@@ -108,6 +108,21 @@ def train_model(data_module: TextEmbeddingDataModule, model_config: ModelConfig)
     return model
 
 
+def load_model(model_path: str) -> BaseClassifier:
+    """
+    Load a trained model.
+
+    Args:
+        model_path (str): Path to the trained model.
+
+    Returns:
+        BaseClassifier: Trained model.
+    """
+    logger.info(f"Loading model from {model_path}")
+    model = BaseClassifier.load_from_checkpoint(model_path)
+    return model
+
+
 def evaluate_model(model: BaseClassifier, data_module: TextEmbeddingDataModule):
     """
     Evaluate the model.
@@ -135,6 +150,9 @@ if __name__ == "__main__":
 
     data_module = get_dataloaders(lithology_data, model_config)
 
-    model = train_model(data_module, model_config)
+    if model_config.load_model:
+        model = load_model(model_config.load_model)
+    else:
+        model = train_model(data_module, model_config)
 
     evaluate_model(model, data_module)

@@ -65,6 +65,7 @@ class ModelConfig:
         use_precomputed_embeddings (bool): Whether to use precomputed embeddings.
         description_col (str): Column name containing the description of the lithology.
         target_col (str): Column name containing the target label.
+        load_model (str, Optional): Path to the model to load.
     """
 
     model_name: str
@@ -79,6 +80,7 @@ class ModelConfig:
     use_precomputed_embeddings: bool
     description_col: str
     target_col: str
+    load_model: str | None = None
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> tp.Self:
