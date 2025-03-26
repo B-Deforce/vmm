@@ -10,3 +10,4 @@ precomputed_embeddings_dir: "../"
 use_precomputed_embeddings: true
 description_col: "beschrijving"
 target_col: "kleur"
+use_class_weights: true

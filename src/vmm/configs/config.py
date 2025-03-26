@@ -66,6 +66,7 @@ class ModelConfig:
         description_col (str): Column name containing the description of the lithology.
         target_col (str): Column name containing the target label.
         load_model (str, Optional): Path to the model to load.
+        use_class_weights (bool): Whether to use class weights for the loss function.
     """
 
     model_name: str
@@ -81,6 +82,7 @@ class ModelConfig:
     description_col: str
     target_col: str
     load_model: str | None = None
+    use_class_weights: bool = False
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> tp.Self:

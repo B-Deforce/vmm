@@ -99,6 +99,7 @@ def train_model(data_module: TextEmbeddingDataModule, model_config: ModelConfig)
         num_classes=len(data_module.label2id),
         learning_rate=model_config.learning_rate,
         dropout=model_config.dropout,
+        class_weights=data_module.get_class_weights() if model_config.use_class_weights else None,
     )
     train_dataloader, val_dataloader, _ = data_module.get_dataloaders()
 

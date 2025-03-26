@@ -18,9 +18,17 @@ class BaseClassifier(pl.LightningModule):
         num_classes (int): The number of classes to predict.
         learning_rate (float): The learning rate for the optimizer.
         dropout (float): The dropout rate for the model.
+        class_weights (torch.Tensor, optional): The class weights for the loss function.
     """
 
-    def __init__(self, input_size: int, num_classes: int, learning_rate: float, dropout: float):
+    def __init__(
+        self,
+        input_size: int,
+        num_classes: int,
+        learning_rate: float,
+        dropout: float,
+        class_weights: Float[torch.Tensor, "C"] | None = None,
+    ):
         super().__init__()
 
         self.save_hyperparameters()
@@ -30,7 +38,7 @@ class BaseClassifier(pl.LightningModule):
         self.layer_2 = nn.Linear(50, num_classes)
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Sequential(self.layer_1, nn.ReLU(), self.dropout, self.layer_2)
-        self.loss_fn = nn.CrossEntropyLoss()
+        self.loss_fn = nn.CrossEntropyLoss(weight=class_weights)
         self.learning_rate = learning_rate
 
     def forward(self, inputs: Float[torch.Tensor, "N D"]) -> Float[torch.Tensor, "N C"]:

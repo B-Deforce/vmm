@@ -3,7 +3,9 @@ import json
 import logging
 import os
 import typing as tp
+from collections import Counter
 
+import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
@@ -314,3 +316,19 @@ class TextEmbeddingDataModule(pl.LightningDataModule):
             mappings = json.load(f)
             self.label2id = mappings["label2id"]
             self.id2label = mappings["id2label"]
+
+    def get_class_weights(self) -> torch.Tensor:
+        """Calculates class weights for imbalanced datasets.
+
+        Returns:
+            np.ndarray: Array of class weights.
+        """
+        labels = [int(label) for _, label in self.train_dataset]
+        class_counts = Counter(labels)
+        total = sum(class_counts.values())
+
+        num_classes = len(self.label2id)
+        weights = torch.zeros(num_classes)
+        for cls in range(num_classes):
+            weights[cls] = total / (num_classes * class_counts[cls])
+        return weights
